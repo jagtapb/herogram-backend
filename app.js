@@ -17,7 +17,7 @@ const JWT_SECRET = 'jwt_secret';
 app.use(express.json());
 
 const corsOptions = {
-    origin: ['http://localhost:3000', 'http://another-frontend.com'], // Allow only your frontend URL
+    origin: ['http://localhost:3000'], // Allow only your frontend URL
     methods: ['GET', 'POST'],               // Allow specific HTTP methods
     allowedHeaders: ['Content-Type', 'Authorization'], // Allow specific headers
   };
@@ -67,6 +67,8 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage: storage });
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+
 
 // API for uploading file
 app.post('/api/upload', [authenticateToken, upload.single('file')], async (req, res) => {
@@ -89,9 +91,9 @@ app.post('/api/upload', [authenticateToken, upload.single('file')], async (req, 
       const fileId = result.rows[0].id;
   
       // Insert a tag for the file (current year)
-      let tagResult = await pool.query('SELECT * FROM "tags" WHERE id = $1', [tagname]);
+      let tagResult = await pool.query('SELECT * FROM "tags" WHERE tag_name = $1', [year]);
 
-      if(!tagResult.rows[0].id) {
+      if(!tagResult) {
         // Insert a tag for the file (current year)
         tagResult = await pool.query(
             'INSERT INTO "tags" (tag_name) VALUES ($1) RETURNING *',
@@ -105,23 +107,40 @@ app.post('/api/upload', [authenticateToken, upload.single('file')], async (req, 
         'INSERT INTO "file_tags" (file_id, tag_id) VALUES ($1, $2)',
         [fileId, tagId]
       );
-  
+
       // Return success response with file data
       res.status(201).json({
         message: 'File uploaded successfully',
-        file: {
-          filename: originalname,
-          filepath: filePath,
-          file_type: req.file.mimetype,
-          file_size: size,
-          year_tag: year,
-        }
+        files: await getAllFiles() ?? []
       });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'An error occurred during file upload' });
     }
 });
+
+app.get('/api/files', authenticateToken, async (req, res) => {
+    res.status(201).json({
+        message: 'success',
+        files: await getAllFiles() ?? []
+      });
+});
+
+async function getAllFiles() {
+    let files = await pool.query('SELECT * FROM "files"');
+    files = files?.rows?.map((row) => {
+      let filepath = row.filepath.split("/");
+      count = filepath.length - 1;
+      // Construct the file URL
+      const fileUrl = `http://localhost:8000/uploads/${filepath[count]}`;
+      return {
+        filename: row.filename,
+        url: fileUrl
+      };
+    });
+
+    return files;
+}
 
 app.get('/api/users', authenticateToken, async (req, res) => {
     try {
