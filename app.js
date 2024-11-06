@@ -3,13 +3,27 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
+const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = 'jwt_secret';
 
 // Middleware
-app.use(bodyParser.json()); // For parsing application/json
+// Middleware to parse JSON body
+app.use(express.json());
+
+const corsOptions = {
+    origin: ['http://localhost:3000', 'http://another-frontend.com'], // Allow only your frontend URL
+    methods: ['GET', 'POST'],               // Allow specific HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allow specific headers
+  };
+  
+// Enable CORS for all routes
+app.use(cors(corsOptions));
 
 // PostgreSQL pool configuration
 const pool = new Pool({
@@ -37,6 +51,78 @@ function authenticateToken(req, res, next) {
     });
 }
 
+// Set up file storage configuration with multer
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      // Set upload directory to 'public/uploads'
+      const uploadDir = path.join(__dirname, 'public', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true }); // Create uploads folder if it doesn't exist
+      }
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      // Use original file name with timestamp to avoid collisions
+      cb(null, Date.now() + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage });
+
+// API for uploading file
+app.post('/api/upload', [authenticateToken, upload.single('file')], async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+  
+    const { originalname, filename, path: filePath, size } = req.file;
+    const year = new Date().getFullYear(); // Get current year
+    const { tagname } = req.body;  // Optional, if you want to track who uploaded the file
+    
+    try {
+      // Insert file details into the database
+      const result = await pool.query(
+        'INSERT INTO "files" (filename, filepath, file_type, file_size, uploaded_at) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [originalname, filePath, req.file.mimetype, size, new Date()]
+      );
+  
+      // Get the file id from the insertion result
+      const fileId = result.rows[0].id;
+  
+      // Insert a tag for the file (current year)
+      let tagResult = await pool.query('SELECT * FROM "tags" WHERE id = $1', [tagname]);
+
+      if(!tagResult.rows[0].id) {
+        // Insert a tag for the file (current year)
+        tagResult = await pool.query(
+            'INSERT INTO "tags" (tag_name) VALUES ($1) RETURNING *',
+            [year]
+        );
+      }
+      const tagId = tagResult.rows[0].id;
+  
+      // Insert the file-tag association
+      await pool.query(
+        'INSERT INTO "file_tags" (file_id, tag_id) VALUES ($1, $2)',
+        [fileId, tagId]
+      );
+  
+      // Return success response with file data
+      res.status(201).json({
+        message: 'File uploaded successfully',
+        file: {
+          filename: originalname,
+          filepath: filePath,
+          file_type: req.file.mimetype,
+          file_size: size,
+          year_tag: year,
+        }
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'An error occurred during file upload' });
+    }
+});
+
 app.get('/api/users', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
@@ -51,18 +137,18 @@ app.get('/api/users', authenticateToken, async (req, res) => {
 
 // Login API
 app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
+    const { email, password } = req.body;
   
-    if (!username || !password) {
+    if (!email || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
   
     try {
       // Query the database to find the user by username
-      const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+      const result = await pool.query('SELECT * FROM "user" WHERE email = $1', [email]);
   
       if (result.rows.length === 0) {
-        return res.status(401).json({ error: 'Invalid username or password' });
+        return res.status(401).json({ error: 'Invalid email or password' });
       }
   
       const user = result.rows[0];
@@ -80,7 +166,7 @@ app.post('/api/login', async (req, res) => {
       });
   
       // Respond with the token
-      res.status(200).json({ message: 'Login successful', token });
+      res.status(200).json({ message: 'Login successful', token, user });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Internal server error' });
@@ -89,7 +175,7 @@ app.post('/api/login', async (req, res) => {
 
 
 // API endpoint to insert user
-app.post('/api/users', authenticateToken, async (req, res) => {
+app.post('/api/signup', async (req, res) => {
     const { username, email, password, fullname } = req.body;
 
     if (!username || !email) {
