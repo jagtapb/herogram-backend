@@ -22,7 +22,7 @@ CREATE TABLE files (
     file_type VARCHAR(50),
     file_size INTEGER,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    uploaded_by INTEGER  -- Optional: Foreign key to a user table if needed
+    uploaded_by INTEGER
 );
 
 CREATE TABLE tags (

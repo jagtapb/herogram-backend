@@ -17,7 +17,7 @@ const JWT_SECRET = 'jwt_secret';
 app.use(express.json());
 
 const corsOptions = {
-    origin: ['http://localhost:3000'], // Allow only your frontend URL
+    origin: ['http://localhost:3000', 'http://207.154.218.245:3000'], // Allow only your frontend URL
     methods: ['GET', 'POST'],               // Allow specific HTTP methods
     allowedHeaders: ['Content-Type', 'Authorization'], // Allow specific headers
   };
@@ -27,9 +27,9 @@ app.use(cors(corsOptions));
 
 // PostgreSQL pool configuration
 const pool = new Pool({
-    user: 'user',         // your postgres username
-    host: 'localhost',      // your postgres host
-    database: 'mydb',       // your database name
+    user: 'jagtapb',         // your postgres username
+    host: '207.154.218.245',      // your postgres host
+    database: 'herogram',       // your database name
     password: 'password',  // your postgres password
     port: 5432,             // default postgres port
 });
@@ -132,7 +132,7 @@ async function getAllFiles() {
       let filepath = row.filepath.split("/");
       count = filepath.length - 1;
       // Construct the file URL
-      const fileUrl = `http://localhost:8000/uploads/${filepath[count]}`;
+      const fileUrl = `http://207.154.218.245:8000/uploads/${filepath[count]}`;
       return {
         filename: row.filename,
         url: fileUrl
@@ -219,6 +219,6 @@ app.post('/api/signup', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running on http://207.154.218.245:${PORT}`);
 });
 
